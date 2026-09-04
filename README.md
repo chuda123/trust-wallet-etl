@@ -47,7 +47,7 @@ Each cycle:
 
 1. **Extract** — HTTP GET with 3 retries and exponential backoff.
 2. **Load raw** — insert every source document into `raw_events` (append-only) and append NDJSON under `data/raw/`.
-3. **Transform** — drop secrets/PII, flatten nested fields, coerce timestamps to UTC RFC3339 / ISO-8601, wrap in an envelope (`meta` + `user`).
+3. **Transform** — drop secrets/PII, flatten nested fields, coerce timestamps to UTC RFC3339 / ISO-8601, wrap in an envelope (`meta` + `user`). Poison rows go to `data/dlq/` and the rest of the batch continues.
 4. **Load processed** — upsert `processed_users` by `source_uuid`; append NDJSON under `data/processed/`.
 
 Raw and processed are **two different contracts**:
@@ -159,6 +159,7 @@ After the first cycle (immediately on boot):
 ```text
 data/raw/dt=YYYY-MM-DD/events.ndjson
 data/processed/dt=YYYY-MM-DD/users.ndjson
+data/dlq/dt=YYYY-MM-DD/errors.ndjson
 data/raw_data.json
 data/processed_data.json
 logs/etl.log
@@ -240,6 +241,7 @@ All knobs are environment variables (see `.env.example`).
 | `DATA_DIR` | `./data` | Lake root |
 | `LOG_PATH` | `./logs/etl.log` | Log file |
 | `SOURCE_NAME` | `randomuser` | Written into `meta.source` |
+| `SCHEMA_VERSION` | `1.0.0` | Written into `meta.schema_version` |
 
 ## How I would productionize this
 

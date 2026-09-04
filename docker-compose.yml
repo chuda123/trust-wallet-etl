@@ -1,6 +1,7 @@
 services:
   postgres:
     image: postgres:16-alpine
+    restart: unless-stopped
     environment:
       POSTGRES_USER: etl
       POSTGRES_PASSWORD: etl
@@ -18,9 +19,16 @@ services:
 
   etl:
     build: .
+    restart: unless-stopped
     depends_on:
       postgres:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 15s
     environment:
       HTTP_ADDR: ":8080"
       POLL_INTERVAL: "30s"
@@ -31,6 +39,7 @@ services:
       DATA_DIR: "/app/data"
       LOG_PATH: "/app/logs/etl.log"
       SOURCE_NAME: "randomuser"
+      SCHEMA_VERSION: "1.0.0"
     ports:
       - "8080:8080"
     volumes:

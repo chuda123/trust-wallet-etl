@@ -11,11 +11,11 @@ type Metrics struct {
 	ExtractDuration prometheus.Histogram
 	ExtractRecords  prometheus.Counter
 
-	TransformErrors prometheus.Counter
-	LoadTotal       *prometheus.CounterVec
-	PipelineRuns    *prometheus.CounterVec
+	TransformErrors  prometheus.Counter
+	LoadTotal        *prometheus.CounterVec
+	PipelineRuns     *prometheus.CounterVec
 	PipelineDuration prometheus.Histogram
-	LastSuccess     prometheus.Gauge
+	LastSuccess      prometheus.Gauge
 }
 
 func NewMetrics() *Metrics {
@@ -24,7 +24,7 @@ func NewMetrics() *Metrics {
 		Registry: reg,
 		ExtractTotal: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: "etl_extract_total",
-			Help: "API extract attempts by result (success|failure).",
+			Help: "Completed extract calls (retries collapsed into one call) by result (success|failure).",
 		}, []string{"status"}),
 		ExtractDuration: prometheus.NewHistogram(prometheus.HistogramOpts{
 			Name:    "etl_extract_duration_seconds",

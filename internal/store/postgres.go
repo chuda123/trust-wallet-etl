@@ -90,7 +90,7 @@ func (s *Store) InsertRaw(ctx context.Context, ingestedAt time.Time, source, bat
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback(ctx)
+	defer func() { _ = tx.Rollback(context.Background()) }()
 
 	const q = `INSERT INTO raw_events (ingested_at, source, batch_id, payload) VALUES ($1, $2, $3, $4)`
 	for _, p := range payloads {
@@ -108,7 +108,7 @@ func (s *Store) UpsertProcessed(ctx context.Context, records []transformer.Recor
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback(ctx)
+	defer func() { _ = tx.Rollback(context.Background()) }()
 
 	const q = `
 INSERT INTO processed_users (source_uuid, ingested_at, batch_id, email, country, payload)
@@ -127,7 +127,7 @@ ON CONFLICT (source_uuid) DO UPDATE SET
 		}
 		ingestedAt, err := time.Parse(time.RFC3339Nano, rec.Meta.IngestedAt)
 		if err != nil {
-			ingestedAt = time.Now().UTC()
+			return fmt.Errorf("ingested_at: %w", err)
 		}
 		if _, err := tx.Exec(ctx, q,
 			rec.User.SourceUUID,

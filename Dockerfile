@@ -9,7 +9,7 @@ COPY . .
 RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/etl ./cmd/etl
 
 FROM alpine:3.20
-RUN apk add --no-cache ca-certificates tzdata
+RUN apk add --no-cache ca-certificates tzdata wget
 WORKDIR /app
 COPY --from=build /out/etl /usr/local/bin/etl
 RUN mkdir -p /app/data/raw /app/data/processed /app/logs

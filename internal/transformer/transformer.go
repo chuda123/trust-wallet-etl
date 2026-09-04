@@ -3,9 +3,12 @@ package transformer
 import (
 	"encoding/json"
 	"fmt"
+	"math"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/google/uuid"
 )
 
 const SchemaVersion = "1.0.0"
@@ -50,14 +53,14 @@ type Name struct {
 }
 
 type Location struct {
-	Street      string  `json:"street"`
-	City        string  `json:"city"`
-	State       string  `json:"state"`
-	Country     string  `json:"country"`
-	PostalCode  string  `json:"postal_code"`
-	Latitude    float64 `json:"latitude"`
-	Longitude   float64 `json:"longitude"`
-	UTCOffset   string  `json:"utc_offset"`
+	Street     string   `json:"street"`
+	City       string   `json:"city"`
+	State      string   `json:"state"`
+	Country    string   `json:"country"`
+	PostalCode string   `json:"postal_code"`
+	Latitude   *float64 `json:"latitude,omitempty"`
+	Longitude  *float64 `json:"longitude,omitempty"`
+	UTCOffset  string   `json:"utc_offset"`
 }
 
 type Contact struct {
@@ -115,15 +118,16 @@ type rawUser struct {
 
 type Result struct {
 	Record Record
+	Raw    json.RawMessage
 	Err    error
 }
 
-func TransformAll(raw []json.RawMessage, source, apiVersion, batchID string, ingestedAt time.Time) []Result {
+func TransformAll(raw []json.RawMessage, source, apiVersion, schemaVersion, batchID string, ingestedAt time.Time) []Result {
 	out := make([]Result, 0, len(raw))
 	for i, item := range raw {
-		rec, err := Transform(item, source, apiVersion, batchID, ingestedAt)
+		rec, err := Transform(item, source, apiVersion, schemaVersion, batchID, ingestedAt)
 		if err != nil {
-			out = append(out, Result{Err: fmt.Errorf("record %d: %w", i, err)})
+			out = append(out, Result{Err: fmt.Errorf("record %d: %w", i, err), Raw: item})
 			continue
 		}
 		out = append(out, Result{Record: rec})
@@ -131,13 +135,19 @@ func TransformAll(raw []json.RawMessage, source, apiVersion, batchID string, ing
 	return out
 }
 
-func Transform(raw json.RawMessage, source, apiVersion, batchID string, ingestedAt time.Time) (Record, error) {
+func Transform(raw json.RawMessage, source, apiVersion, schemaVersion, batchID string, ingestedAt time.Time) (Record, error) {
 	var u rawUser
 	if err := json.Unmarshal(raw, &u); err != nil {
 		return Record{}, fmt.Errorf("unmarshal: %w", err)
 	}
 	if u.Login.UUID == "" {
 		return Record{}, fmt.Errorf("missing login.uuid (natural key)")
+	}
+	if _, err := uuid.Parse(u.Login.UUID); err != nil {
+		return Record{}, fmt.Errorf("login.uuid: %w", err)
+	}
+	if schemaVersion == "" {
+		schemaVersion = SchemaVersion
 	}
 
 	birth, err := toUTCISO(u.DOB.Date)
@@ -149,26 +159,32 @@ func Transform(raw json.RawMessage, source, apiVersion, batchID string, ingested
 		return Record{}, fmt.Errorf("registered: %w", err)
 	}
 
-	lat, _ := strconv.ParseFloat(u.Location.Coordinates.Latitude, 64)
-	lon, _ := strconv.ParseFloat(u.Location.Coordinates.Longitude, 64)
+	lat, err := parseCoord("latitude", u.Location.Coordinates.Latitude)
+	if err != nil {
+		return Record{}, err
+	}
+	lon, err := parseCoord("longitude", u.Location.Coordinates.Longitude)
+	if err != nil {
+		return Record{}, err
+	}
 
 	display := strings.TrimSpace(u.Name.First + " " + u.Name.Last)
 	street := strings.TrimSpace(fmt.Sprintf("%d %s", u.Location.Street.Number, u.Location.Street.Name))
 
 	return Record{
 		Meta: Meta{
-			SchemaVersion: SchemaVersion,
+			SchemaVersion: schemaVersion,
 			Source:        source,
 			IngestedAt:    ingestedAt.UTC().Format(time.RFC3339Nano),
 			BatchID:       batchID,
 			APIVersion:    apiVersion,
 		},
 		User: User{
-			SourceUUID:   u.Login.UUID,
-			Username:     u.Login.Username,
-			Email:        strings.ToLower(strings.TrimSpace(u.Email)),
-			Gender:       u.Gender,
-			Nationality:  u.Nat,
+			SourceUUID:  u.Login.UUID,
+			Username:    u.Login.Username,
+			Email:       strings.ToLower(strings.TrimSpace(u.Email)),
+			Gender:      u.Gender,
+			Nationality: u.Nat,
 			Name: Name{
 				Title:       u.Name.Title,
 				First:       u.Name.First,
@@ -216,6 +232,21 @@ func toUTCISO(s string) (string, error) {
 		}
 	}
 	return "", fmt.Errorf("unsupported timestamp %q", s)
+}
+
+func parseCoord(name, raw string) (*float64, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return nil, nil
+	}
+	v, err := strconv.ParseFloat(raw, 64)
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", name, err)
+	}
+	if math.IsNaN(v) || math.IsInf(v, 0) {
+		return nil, fmt.Errorf("%s: non-finite value %q", name, raw)
+	}
+	return &v, nil
 }
 
 func stringifyPostcode(raw json.RawMessage) string {

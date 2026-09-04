@@ -40,3 +40,24 @@ func TestAppendDoesNotOverwrite(t *testing.T) {
 		}
 	}
 }
+
+func TestAppendCompactsEmbeddedNewlines(t *testing.T) {
+	dir := t.TempDir()
+	lk, err := lake.New(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ts := time.Date(2026, 9, 4, 12, 0, 0, 0, time.UTC)
+	pretty := []json.RawMessage{json.RawMessage("{\n  \"id\": 1\n}")}
+	if err := lk.AppendRaw(ts, pretty); err != nil {
+		t.Fatal(err)
+	}
+	body, err := os.ReadFile(filepath.Join(dir, "raw", "dt=2026-09-04", "events.ndjson"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	lines := strings.Split(strings.TrimSpace(string(body)), "\n")
+	if len(lines) != 1 {
+		t.Fatalf("pretty json must compact to one NDJSON line, got %d (%q)", len(lines), body)
+	}
+}

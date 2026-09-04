@@ -9,17 +9,17 @@ import (
 
 // Config is loaded from the environment so the same binary runs locally and in Docker.
 type Config struct {
-	HTTPAddr       string
-	PollInterval   time.Duration
-	FetchResults   int
-	APIURL         string
-	APITimeout     time.Duration
-	DatabaseURL    string
-	DataDir        string
-	LogPath        string
-	SourceName     string
-	SchemaVersion  string
-	ShutdownGrace  time.Duration
+	HTTPAddr      string
+	PollInterval  time.Duration
+	FetchResults  int
+	APIURL        string
+	APITimeout    time.Duration
+	DatabaseURL   string
+	DataDir       string
+	LogPath       string
+	SourceName    string
+	SchemaVersion string
+	ShutdownGrace time.Duration
 }
 
 func Load() (Config, error) {
@@ -37,11 +37,20 @@ func Load() (Config, error) {
 	if cfg.PollInterval, err = duration("POLL_INTERVAL", 30*time.Second); err != nil {
 		return Config{}, err
 	}
+	if cfg.PollInterval <= 0 {
+		return Config{}, fmt.Errorf("POLL_INTERVAL must be > 0")
+	}
 	if cfg.APITimeout, err = duration("API_TIMEOUT", 15*time.Second); err != nil {
 		return Config{}, err
 	}
+	if cfg.APITimeout <= 0 {
+		return Config{}, fmt.Errorf("API_TIMEOUT must be > 0")
+	}
 	if cfg.ShutdownGrace, err = duration("SHUTDOWN_GRACE", 10*time.Second); err != nil {
 		return Config{}, err
+	}
+	if cfg.ShutdownGrace <= 0 {
+		return Config{}, fmt.Errorf("SHUTDOWN_GRACE must be > 0")
 	}
 	if cfg.FetchResults, err = integer("FETCH_RESULTS", 10); err != nil {
 		return Config{}, err

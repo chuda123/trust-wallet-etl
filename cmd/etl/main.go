@@ -2,7 +2,9 @@ package main
 
 import (
 	"context"
+	"errors"
 	"log"
+	"log/slog"
 	"os"
 	"os/signal"
 	"syscall"
@@ -40,6 +42,10 @@ func run() error {
 	logger.Info("connecting to postgres", "poll_interval", cfg.PollInterval.String())
 	db, err := waitForStore(ctx, cfg.DatabaseURL, logger)
 	if err != nil {
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			logger.Info("shutdown before postgres was ready")
+			return nil
+		}
 		return err
 	}
 	defer db.Close()
@@ -51,10 +57,13 @@ func run() error {
 
 	metrics := observe.NewMetrics()
 	srv := observe.NewServer(cfg.HTTPAddr, db, metrics, logger)
-	srv.Start()
+	srv.Start(func(err error) {
+		logger.Error("http listener failed; stopping pipeline", "error", err)
+		stop()
+	})
 
 	ex := extractor.New(cfg.APIURL, cfg.FetchResults, cfg.APITimeout)
-	pipe := pipeline.New(cfg.SourceName, ex, db, lk, metrics, logger)
+	pipe := pipeline.New(cfg.SourceName, cfg.SchemaVersion, ex, db, lk, metrics, logger)
 	pipe.Run(ctx, cfg.PollInterval)
 
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), cfg.ShutdownGrace)
@@ -66,7 +75,7 @@ func run() error {
 	return nil
 }
 
-func waitForStore(ctx context.Context, url string, logger interface{ Info(string, ...any) }) (*store.Store, error) {
+func waitForStore(ctx context.Context, url string, logger *slog.Logger) (*store.Store, error) {
 	var last error
 	for i := 0; i < 20; i++ {
 		db, err := store.Connect(ctx, url)

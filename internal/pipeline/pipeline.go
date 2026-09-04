@@ -14,16 +14,17 @@ import (
 )
 
 type Pipeline struct {
-	source    string
-	extractor *extractor.Extractor
-	store     *store.Store
-	lake      *lake.Lake
-	metrics   *observe.Metrics
-	log       *slog.Logger
+	source        string
+	schemaVersion string
+	extractor     *extractor.Extractor
+	store         *store.Store
+	lake          *lake.Lake
+	metrics       *observe.Metrics
+	log           *slog.Logger
 }
 
-func New(source string, ex *extractor.Extractor, st *store.Store, lk *lake.Lake, m *observe.Metrics, log *slog.Logger) *Pipeline {
-	return &Pipeline{source: source, extractor: ex, store: st, lake: lk, metrics: m, log: log}
+func New(source, schemaVersion string, ex *extractor.Extractor, st *store.Store, lk *lake.Lake, m *observe.Metrics, log *slog.Logger) *Pipeline {
+	return &Pipeline{source: source, schemaVersion: schemaVersion, extractor: ex, store: st, lake: lk, metrics: m, log: log}
 }
 
 // Run ticks every interval until ctx is cancelled. One cycle also runs immediately.
@@ -78,6 +79,8 @@ func (p *Pipeline) cycle(ctx context.Context) error {
 		"api_version", env.Info.Version,
 	)
 
+	// Raw sinks are the replay log. If processed load fails later, replay from raw —
+	// we do not 2PC the four writes (that belongs in a queue + consumer in production).
 	if err := p.store.InsertRaw(ctx, ingestedAt, p.source, batchID, env.RawResults); err != nil {
 		p.log.Error("postgres raw save failed", "error", err, "batch_id", batchID)
 		return err
@@ -92,17 +95,26 @@ func (p *Pipeline) cycle(ctx context.Context) error {
 	p.metrics.LoadTotal.WithLabelValues("lake_raw").Add(float64(len(env.RawResults)))
 	p.log.Info("data saved successfully", "sink", "lake_raw", "records", len(env.RawResults), "batch_id", batchID)
 
-	results := transformer.TransformAll(env.RawResults, p.source, env.Info.Version, batchID, ingestedAt)
+	results := transformer.TransformAll(env.RawResults, p.source, env.Info.Version, p.schemaVersion, batchID, ingestedAt)
 	ok := make([]transformer.Record, 0, len(results))
 	asAny := make([]any, 0, len(results))
+	dead := make([]lake.DeadLetter, 0)
 	for _, r := range results {
 		if r.Err != nil {
 			p.metrics.TransformErrors.Inc()
 			p.log.Error("transformation error", "error", r.Err, "batch_id", batchID)
+			dead = append(dead, lake.DeadLetter{Error: r.Err.Error(), Payload: r.Raw})
 			continue
 		}
 		ok = append(ok, r.Record)
 		asAny = append(asAny, r.Record)
+	}
+	if len(dead) > 0 {
+		if err := p.lake.AppendDLQ(ingestedAt, dead); err != nil {
+			p.log.Error("dlq save failed", "error", err, "batch_id", batchID)
+		} else {
+			p.metrics.LoadTotal.WithLabelValues("lake_dlq").Add(float64(len(dead)))
+		}
 	}
 	if len(ok) == 0 {
 		return errNoProcessed

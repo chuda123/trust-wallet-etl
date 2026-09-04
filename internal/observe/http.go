@@ -34,11 +34,16 @@ func NewServer(addr string, store Pinger, metrics *Metrics, log *slog.Logger) *S
 	return s
 }
 
-func (s *Server) Start() {
+// Start serves HTTP until shutdown. onListenError is called if the listener fails
+// (so the process can stop polling instead of running blind).
+func (s *Server) Start(onListenError func(error)) {
 	go func() {
 		s.log.Info("http server listening", "addr", s.http.Addr)
 		if err := s.http.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			s.log.Error("http server failed", "error", err)
+			if onListenError != nil {
+				onListenError(err)
+			}
 		}
 	}()
 }
@@ -55,9 +60,10 @@ func (s *Server) health(w http.ResponseWriter, r *http.Request) {
 	code := http.StatusOK
 	pg := "ok"
 	if err := s.store.Ping(ctx); err != nil {
+		s.log.Error("health postgres ping failed", "error", err)
 		status = "degraded"
 		code = http.StatusServiceUnavailable
-		pg = err.Error()
+		pg = "error"
 	}
 
 	w.Header().Set("Content-Type", "application/json")

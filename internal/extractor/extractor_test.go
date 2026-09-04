@@ -47,3 +47,21 @@ func TestFetchRetriesThenFails(t *testing.T) {
 		t.Fatalf("expected retries, hits=%d", hits)
 	}
 }
+
+func TestFetchDoesNotRetryClientErrors(t *testing.T) {
+	hits := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits++
+		http.Error(w, "nope", http.StatusBadRequest)
+	}))
+	defer srv.Close()
+
+	ex := extractor.New(srv.URL, 1, 2*time.Second)
+	_, err := ex.Fetch(context.Background())
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if hits != 1 {
+		t.Fatalf("should not retry 400, hits=%d", hits)
+	}
+}

@@ -44,7 +44,7 @@ const sample = `{
 
 func TestTransformNormalizesAndDropsSensitiveFields(t *testing.T) {
 	ingested := time.Date(2026, 9, 4, 13, 0, 0, 0, time.UTC)
-	rec, err := transformer.Transform(json.RawMessage(sample), "randomuser", "1.4", "batch-1", ingested)
+	rec, err := transformer.Transform(json.RawMessage(sample), "randomuser", "1.4", "1.0.0", "batch-1", ingested)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -69,7 +69,10 @@ func TestTransformNormalizesAndDropsSensitiveFields(t *testing.T) {
 	if rec.User.Location.PostalCode != "61557" {
 		t.Fatalf("postcode: %s", rec.User.Location.PostalCode)
 	}
-	if rec.User.Location.Latitude == 0 || rec.User.Location.Longitude == 0 {
+	if rec.User.Location.Latitude == nil || rec.User.Location.Longitude == nil {
+		t.Fatalf("coordinates missing: %+v", rec.User.Location)
+	}
+	if *rec.User.Location.Latitude == 0 || *rec.User.Location.Longitude == 0 {
 		t.Fatalf("coordinates not parsed: %+v", rec.User.Location)
 	}
 	if rec.User.Contact.Phone != "6532655591" {
@@ -92,7 +95,7 @@ func TestTransformNormalizesAndDropsSensitiveFields(t *testing.T) {
 }
 
 func TestTransformRejectsMissingNaturalKey(t *testing.T) {
-	_, err := transformer.Transform(json.RawMessage(`{"login":{}}`), "randomuser", "1.4", "b", time.Now())
+	_, err := transformer.Transform(json.RawMessage(`{"login":{}}`), "randomuser", "1.4", "1.0.0", "b", time.Now())
 	if err == nil {
 		t.Fatal("expected error")
 	}
@@ -103,7 +106,7 @@ func TestTransformAllIsolatesBadRecords(t *testing.T) {
 		json.RawMessage(sample),
 		json.RawMessage(`{"login":{}}`),
 	}
-	out := transformer.TransformAll(raw, "randomuser", "1.4", "b", time.Now().UTC())
+	out := transformer.TransformAll(raw, "randomuser", "1.4", "1.0.0", "b", time.Now().UTC())
 	if len(out) != 2 {
 		t.Fatalf("len=%d", len(out))
 	}
@@ -112,5 +115,46 @@ func TestTransformAllIsolatesBadRecords(t *testing.T) {
 	}
 	if out[1].Err == nil {
 		t.Fatal("second should fail")
+	}
+}
+
+func TestTransformRejectsBadCoordinates(t *testing.T) {
+	raw := `{
+	  "login": {"uuid": "6106e1d9-dfea-45ae-8b0b-320e9861a898", "username": "x"},
+	  "email": "a@b.c",
+	  "dob": {"date": "1951-10-14T04:21:30.137Z"},
+	  "registered": {"date": "2002-09-22T08:20:58.921Z"},
+	  "location": {"coordinates": {"latitude": "not-a-number", "longitude": "1"}}
+	}`
+	_, err := transformer.Transform(json.RawMessage(raw), "randomuser", "1.4", "1.0.0", "b", time.Now().UTC())
+	if err == nil {
+		t.Fatal("expected coordinate error")
+	}
+}
+
+func TestTransformRejectsNonFiniteCoordinates(t *testing.T) {
+	raw := `{
+	  "login": {"uuid": "6106e1d9-dfea-45ae-8b0b-320e9861a898", "username": "x"},
+	  "email": "a@b.c",
+	  "dob": {"date": "1951-10-14T04:21:30.137Z"},
+	  "registered": {"date": "2002-09-22T08:20:58.921Z"},
+	  "location": {"coordinates": {"latitude": "NaN", "longitude": "1e999"}}
+	}`
+	_, err := transformer.Transform(json.RawMessage(raw), "randomuser", "1.4", "1.0.0", "b", time.Now().UTC())
+	if err == nil {
+		t.Fatal("expected non-finite coordinate error")
+	}
+}
+
+func TestTransformRejectsInvalidUUID(t *testing.T) {
+	raw := `{
+	  "login": {"uuid": "not-a-uuid", "username": "x"},
+	  "email": "a@b.c",
+	  "dob": {"date": "1951-10-14T04:21:30.137Z"},
+	  "registered": {"date": "2002-09-22T08:20:58.921Z"}
+	}`
+	_, err := transformer.Transform(json.RawMessage(raw), "randomuser", "1.4", "1.0.0", "b", time.Now().UTC())
+	if err == nil {
+		t.Fatal("expected uuid error")
 	}
 }
