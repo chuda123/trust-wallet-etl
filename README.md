@@ -134,9 +134,12 @@ The original API object is stored as `JSONB`. Nothing is interpreted except `sou
 
 ## Local run (without Docker for the app)
 
-Requires Go 1.23+ and Postgres 16.
+Requires Go 1.23+ and Postgres 16. Skip the clone if you already have the repo from Quick start.
 
 ```bash
+git clone https://github.com/chuda123/trust-wallet-etl.git
+cd trust-wallet-etl
+
 # Postgres
 docker compose up -d postgres
 
