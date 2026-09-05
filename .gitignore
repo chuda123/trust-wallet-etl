@@ -8,10 +8,11 @@
 /data/raw/**
 /data/processed/**
 /data/dlq/**
+/logs/*.log
+# Leftover unpartitioned dumps from older builds; do not commit.
 /data/raw_data.json
 /data/processed_data.json
 /data/dlq.json
-/logs/*.log
 
 # Keep lake directory structure in git
 !/data/raw/.gitkeep

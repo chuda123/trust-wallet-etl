@@ -11,7 +11,8 @@ import (
 )
 
 // Lake is a local filesystem stand-in for an object-store data lake.
-// Files are NDJSON (one compact JSON object per line) and always appended.
+// Files are NDJSON (one compact JSON object per line), partitioned by UTC date,
+// and always appended.
 type Lake struct {
 	root string
 	mu   sync.Mutex
@@ -36,16 +37,12 @@ func New(root string) (*Lake, error) {
 	return l, nil
 }
 
-// AppendRaw writes each source record to:
-//   - data/raw/dt=YYYY-MM-DD/events.ndjson  (partitioned lake path)
-//   - data/raw_data.json                    (spec example path; NDJSON despite .json)
+// AppendRaw writes each source record to data/raw/dt=YYYY-MM-DD/events.ndjson.
 func (l *Lake) AppendRaw(ingestedAt time.Time, records []json.RawMessage) error {
-	return l.append("raw", "events.ndjson", "raw_data.json", ingestedAt, records)
+	return l.append("raw", "events.ndjson", ingestedAt, records)
 }
 
-// AppendProcessed writes normalized records to:
-//   - data/processed/dt=YYYY-MM-DD/users.ndjson
-//   - data/processed_data.json
+// AppendProcessed writes normalized records to data/processed/dt=YYYY-MM-DD/users.ndjson.
 func (l *Lake) AppendProcessed(ingestedAt time.Time, records []any) error {
 	raw := make([]json.RawMessage, 0, len(records))
 	for _, rec := range records {
@@ -55,7 +52,7 @@ func (l *Lake) AppendProcessed(ingestedAt time.Time, records []any) error {
 		}
 		raw = append(raw, b)
 	}
-	return l.append("processed", "users.ndjson", "processed_data.json", ingestedAt, raw)
+	return l.append("processed", "users.ndjson", ingestedAt, raw)
 }
 
 // AppendDLQ keeps poison payloads out of processed while still making them inspectable.
@@ -68,10 +65,10 @@ func (l *Lake) AppendDLQ(ingestedAt time.Time, items []DeadLetter) error {
 		}
 		raw = append(raw, b)
 	}
-	return l.append("dlq", "errors.ndjson", "dlq.json", ingestedAt, raw)
+	return l.append("dlq", "errors.ndjson", ingestedAt, raw)
 }
 
-func (l *Lake) append(kind, partName, flatName string, ingestedAt time.Time, records []json.RawMessage) error {
+func (l *Lake) append(kind, partName string, ingestedAt time.Time, records []json.RawMessage) error {
 	if len(records) == 0 {
 		return nil
 	}
@@ -92,17 +89,7 @@ func (l *Lake) append(kind, partName, flatName string, ingestedAt time.Time, rec
 	if err := os.MkdirAll(partDir, 0o755); err != nil {
 		return fmt.Errorf("mkdir %s: %w", partDir, err)
 	}
-
-	partPath := filepath.Join(partDir, partName)
-	flatPath := filepath.Join(l.root, flatName)
-
-	if err := appendNDJSON(partPath, compacted); err != nil {
-		return err
-	}
-	if err := appendNDJSON(flatPath, compacted); err != nil {
-		return err
-	}
-	return nil
+	return appendNDJSON(filepath.Join(partDir, partName), compacted)
 }
 
 func compactJSON(raw json.RawMessage) (json.RawMessage, error) {
