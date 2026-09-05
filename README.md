@@ -12,7 +12,7 @@ It is a better fit for this exercise than a flat todo list:
 
 - Nested documents (name, location, login, pictures) force an explicit **schema** rather than `SELECT *`.
 - Timestamps (`dob.date`, `registered.date`) need a consistent UTC / ISO-8601 contract.
-- The payload includes credentials and national IDs, which should **never** land in a lake. Dropping them is a design choice, not an afterthought.
+- The payload includes credentials and national IDs. **Raw keeps the vendor document as-is** (`raw_events` + `data/raw`) so we can replay. **Processed is desensitized** — passwords, hashes, and national IDs are dropped before `processed_users` and `data/processed`.
 - `login.uuid` is a stable natural key, which is what you want for idempotent upserts later.
 
 In a wallet company this maps cleanly onto an **identity / profile ingestion** path (app users, device accounts, KYC vendors) that sits beside on-chain event pipelines.
@@ -110,7 +110,7 @@ The original API object is stored as `JSONB`. Nothing is interpreted except `sou
 - `schema_version` lets a downstream job dual-read v1 and v2 during a migration.
 - `source_uuid` is the idempotency key.
 
-**Dropped on purpose:** `login.password`, `salt`, hashes, national ID / SSN, large/medium avatars, timezone description.
+**Dropped from processed (raw still has the original):** `login.password`, `salt`, hashes, national ID / SSN, large/medium avatars, timezone description.
 
 ## Local run (without Docker for the app)
 
@@ -258,7 +258,7 @@ The take-home is a single process writing local files. That is the right size fo
 - Keep a **raw zone** untouched (this repo’s `raw_events` + `data/raw`). Replay is cheaper than begging the vendor for history.
 - Move heavy transforms to **Spark / Flink / Dataflow** or **dbt** on the warehouse once volume leaves “small JSON files” territory. Go stays as the collector.
 - Version schemas with a registry (Buf / JSON Schema / Avro). `schema_version` in `meta` is the foothold for that.
-- Classify columns (public / internal / restricted). Anything like SSN or seed phrases is dropped or tokenized **before** the lake, which is what the transformer does with passwords and national IDs.
+- Classify columns (public / internal / restricted). In this repo, passwords and national IDs stay in **raw** for replay and are stripped in **processed**. Production should go further: encrypt or shorten raw retention, and tokenize restricted fields before they reach any long-lived curated lake.
 
 ### Storage
 
