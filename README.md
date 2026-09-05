@@ -57,7 +57,7 @@ Raw and processed are **two different contracts**:
 | Raw | `raw_events` insert | `data/raw/dt=YYYY-MM-DD/events.ndjson` | Append only (replay log) |
 | Processed | `processed_users` upsert | `data/processed/dt=YYYY-MM-DD/users.ndjson` | Table is current snapshot; lake keeps every version |
 
-The spec example files `data/raw_data.json` and `data/processed_data.json` are also written, as **NDJSON** (one object per line). A JSON array cannot be appended safely without rewriting the whole file; NDJSON is the usual lake format and still satisfies “append, do not overwrite”.
+Lake files are **NDJSON** (one object per line) under Hive-style `dt=YYYY-MM-DD/` partitions. A JSON array cannot be appended safely without rewriting the whole file; NDJSON is the usual lake format and still satisfies “append, do not overwrite”.
 
 ## Project layout
 
@@ -160,8 +160,6 @@ After the first cycle (immediately on boot):
 data/raw/dt=YYYY-MM-DD/events.ndjson
 data/processed/dt=YYYY-MM-DD/users.ndjson
 data/dlq/dt=YYYY-MM-DD/errors.ndjson
-data/raw_data.json
-data/processed_data.json
 logs/etl.log
 ```
 

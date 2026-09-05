@@ -28,16 +28,60 @@ func TestAppendDoesNotOverwrite(t *testing.T) {
 	}
 
 	part := filepath.Join(dir, "raw", "dt=2026-09-04", "events.ndjson")
-	flat := filepath.Join(dir, "raw_data.json")
-	for _, p := range []string{part, flat} {
-		body, err := os.ReadFile(p)
-		if err != nil {
-			t.Fatal(err)
+	body, err := os.ReadFile(part)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lines := strings.Split(strings.TrimSpace(string(body)), "\n")
+	if len(lines) != 2 {
+		t.Fatalf("%s: want 2 lines, got %d (%q)", part, len(lines), body)
+	}
+}
+
+func TestAppendDoesNotWriteUnpartitionedCopies(t *testing.T) {
+	dir := t.TempDir()
+	lk, err := lake.New(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ts := time.Date(2026, 9, 4, 12, 0, 0, 0, time.UTC)
+	if err := lk.AppendRaw(ts, []json.RawMessage{json.RawMessage(`{"id":1}`)}); err != nil {
+		t.Fatal(err)
+	}
+	if err := lk.AppendProcessed(ts, []any{map[string]int{"id": 1}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := lk.AppendDLQ(ts, []lake.DeadLetter{{Error: "boom", Payload: json.RawMessage(`{"id":1}`)}}); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, name := range []string{"raw_data.json", "processed_data.json", "dlq.json"} {
+		p := filepath.Join(dir, name)
+		if _, err := os.Stat(p); !os.IsNotExist(err) {
+			t.Fatalf("unpartitioned copy %s should not exist", p)
 		}
-		lines := strings.Split(strings.TrimSpace(string(body)), "\n")
-		if len(lines) != 2 {
-			t.Fatalf("%s: want 2 lines, got %d (%q)", p, len(lines), body)
-		}
+	}
+}
+
+func TestAppendSplitsByUTCDate(t *testing.T) {
+	dir := t.TempDir()
+	lk, err := lake.New(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	day1 := time.Date(2026, 9, 4, 23, 0, 0, 0, time.UTC)
+	day2 := time.Date(2026, 9, 5, 1, 0, 0, 0, time.UTC)
+	if err := lk.AppendRaw(day1, []json.RawMessage{json.RawMessage(`{"id":1}`)}); err != nil {
+		t.Fatal(err)
+	}
+	if err := lk.AppendRaw(day2, []json.RawMessage{json.RawMessage(`{"id":2}`)}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "raw", "dt=2026-09-04", "events.ndjson")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "raw", "dt=2026-09-05", "events.ndjson")); err != nil {
+		t.Fatal(err)
 	}
 }
 

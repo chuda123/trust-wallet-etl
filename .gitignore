@@ -8,9 +8,6 @@
 /data/raw/**
 /data/processed/**
 /data/dlq/**
-/data/raw_data.json
-/data/processed_data.json
-/data/dlq.json
 /logs/*.log
 
 # Keep lake directory structure in git
