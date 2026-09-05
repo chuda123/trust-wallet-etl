@@ -4,6 +4,26 @@ A small **extract → transform → load** service in Go. It polls a public REST
 
 This repository is the submission for the Trust Wallet Data Engineer take-home.
 
+## Quick start
+
+Needs Docker (Compose v2). From a clean machine:
+
+```bash
+git clone https://github.com/chuda123/trust-wallet-etl.git
+cd trust-wallet-etl
+docker compose up --build
+```
+
+Compose starts Postgres, then the ETL. After the first cycle (it runs immediately on boot):
+
+```bash
+curl -s localhost:8080/health
+curl -s localhost:8080/metrics | grep etl_
+ls data/raw/dt=*/events.ndjson data/processed/dt=*/users.ndjson logs/etl.log
+```
+
+Stop with Ctrl+C in the Compose terminal, or `docker compose down` from another shell (`down` keeps the Postgres volume; `down -v` wipes it).
+
 ## Why this API
 
 Source: [Random User API](https://randomuser.me/) (`https://randomuser.me/api/`).
@@ -145,6 +165,8 @@ The image is a two-stage build: compile in `golang:1.23-alpine`, run a static bi
 Compose starts Postgres, waits until it accepts connections, then starts the ETL container with **bind mounts** for the lake and the log file, plus a named volume for Postgres.
 
 ```bash
+git clone https://github.com/chuda123/trust-wallet-etl.git
+cd trust-wallet-etl
 docker compose up --build
 ```
 
